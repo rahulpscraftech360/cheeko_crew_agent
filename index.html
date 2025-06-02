@@ -1,151 +1,213 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kids AI ChatBot</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kids AI Chat</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gradient-to-r from-blue-200 to-purple-200 min-h-screen flex flex-col items-center justify-center">
-    <div id="root" class="w-full max-w-2xl p-6"></div>
-    <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.9/babel.min.js"></script>
-    <script type="text/babel">
-        const { useState, useEffect } = React;
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
 
-        function App() {
-            const [name, setName] = useState("Emma");
-            const [theme, setTheme] = useState("dragons");
-             const [age, setAge] = useState(7);  // Add age state
-            const [input, setInput] = useState("");
-            const [messages, setMessages] = useState([]);
-            const [points, setPoints] = useState(0);
-            const [ws, setWs] = useState(null);
-            
-            // Remove showEscalation state since we won't use buttons anymore
-            const [showEscalation, setShowEscalation] = useState(false);
+    const ChatApp = () => {
+      const [messages, setMessages] = useState([]);
+      const [input, setInput] = useState('');
+      const [isThinking, setIsThinking] = useState(false);
+      const [userProfile, setUserProfile] = useState({ name: 'Emma', favorite_theme: 'dragons' });
+      const messagesEndRef = useRef(null);
 
-            useEffect(() => {
-                const socket = new WebSocket("ws://localhost:8000/ws");
-                socket.onopen = () => console.log("WebSocket connected");
-                socket.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    setMessages((prev) => [...prev, { text: data.output, isUser: false, intent: data.intent }]);
-                    setPoints(data.points);
-                    setShowEscalation(data.intent === "escalation");
-                    // Scroll to bottom
-                    const chat = document.getElementById("chat-container");
-                    chat.scrollTop = chat.scrollHeight;
-                };
-                socket.onclose = () => console.log("WebSocket disconnected");
-                socket.onerror = (error) => console.error("WebSocket error:", error);
-                setWs(socket);
+      // Simulate initial profile prompt
+      useEffect(() => {
+        setMessages([
+          {
+            sender: 'ai',
+            text: `Hi ${userProfile.name}! I love ${userProfile.favorite_theme}! What's on your mind today?`,
+            timestamp: new Date(),
+          },
+        ]);
+      }, []);
 
-                return () => socket.close();
-            }, []);
+      // Scroll to latest message
+      useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, [messages]);
 
-            const sendMessage = () => {
-                if (ws && input.trim()) {
-                    const message = { input, name, theme, age };  // Include age in message
-                    ws.send(JSON.stringify(message));
-                    setMessages((prev) => [...prev, { text: input, isUser: true }]);
-                    setInput("");
-                }
-            };
+      // Simulate backend API call
+      const simulateBackend = async (userInput) => {
+        // Placeholder for actual API call to Python backend
+        // For demo, return a mock response based on intent detection logic
+        setIsThinking(true);
+        await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate delay
 
-            const handleEscalationResponse = (response) => {
-                if (ws) {
-                    ws.send(JSON.stringify({ input: response, name, theme }));
-                    setShowEscalation(false);
-                }
-            };
+        // Mock intent detection
+        const lowerInput = userInput.toLowerCase();
+        let response = '';
+        let intent = 'chit_chat';
 
-            const handleKeyPress = (e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                }
-            };
-
-            return (
-                <div className="bg-white rounded-lg shadow-xl p-6 w-full">
-                    <h1 className="text-3xl font-bold text-center text-purple-600 mb-4">Kids AI ChatBot</h1>
-                    <div className="mb-4 flex space-x-4">
-                        <input
-                            type="text"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            placeholder="Your name"
-                            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                        />
-                        <input
-                            type="number"
-                            value={age}
-                            onChange={(e) => setAge(Number(e.target.value))}
-                            placeholder="Your age"
-                            min="4"
-                            max="12"
-                            className="w-24 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                        />
-                        <input
-                            type="text"
-                            value={theme}
-                            onChange={(e) => setTheme(e.target.value)}
-                            placeholder="Favorite theme (e.g., dragons)"
-                            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                        />
-                    </div>
-                    <div id="chat-container" className="h-96 overflow-y-auto mb-4 p-4 bg-gray-100 rounded-lg">
-                        {messages.map((msg, index) => (
-                            <div
-                                key={index}
-                                className={`mb-2 p-3 rounded-lg max-w-xs ${msg.isUser ? "bg-purple-500 text-white ml-auto" : "bg-blue-200 text-gray-800"}`}
-                            >
-                                {msg.text}
-                            </div>
-                        ))}
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <input
-                            type="text"
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onKeyPress={handleKeyPress}
-                            placeholder="Type your message..."
-                            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                            disabled={showEscalation}
-                        />
-                        <button
-                            onClick={sendMessage}
-                            className="bg-purple-600 text-white p-2 rounded-lg hover:bg-purple-700 disabled:bg-gray-400"
-                            disabled={showEscalation}
-                        >
-                            Send
-                        </button>
-                    </div>
-                    {showEscalation && (
-                        <div className="mt-4 flex space-x-4 justify-center">
-                            <button
-                                onClick={() => handleEscalationResponse("yes")}
-                                className="bg-green-500 text-white p-2 rounded-lg hover:bg-green-600"
-                            >
-                                Yes, talk to a parent
-                            </button>
-                            <button
-                                onClick={() => handleEscalationResponse("no")}
-                                className="bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600"
-                            >
-                                No, tell a story
-                            </button>
-                        </div>
-                    )}
-                    <p className="text-center text-gray-600 mt-4">Points: {points}</p>
-                </div>
-            );
+        if (/hi|hello|hey/.test(lowerInput)) {
+          intent = 'greeting';
+          response = `Hey ${userProfile.name}! Ready for some ${userProfile.favorite_theme} fun?`;
+        } else if (/story|bedtime|sotry|sleepy/.test(lowerInput)) {
+          intent = 'bedtime_story';
+          response = `Once upon a time, ${userProfile.name} met a friendly ${userProfile.favorite_theme} named Fluffy... Want more?`;
+        } else if (/math|quiz|numbers/.test(lowerInput)) {
+          intent = 'math_quiz';
+          response = `Here's a fun math quiz, ${userProfile.name}! What's 2 + 3? (Type the answer!)`;
+        } else if (/sad|happy|scared|feeling/.test(lowerInput)) {
+          intent = 'emotional_checkin';
+          response = `Aww, ${userProfile.name}, it sounds like you're feeling something big. Want to talk about it or hear a ${userProfile.favorite_theme} story?`;
+        } else {
+          response = `Cool, let's chat about ${userProfile.favorite_theme}! What's your favorite thing about them?`;
         }
 
-        ReactDOM.render(<App />, document.getElementById("root"));
-    </script>
+        // Simulate safety check
+        if (/adult|violent/.test(lowerInput)) {
+          response = "Sorry, that doesn't sound like a fun topic for kids! How about something else?";
+        }
+
+        // Simulate parental notification
+        if (intent === 'emotional_checkin') {
+          alert(`Parental Notification: Child mentioned feelings in: "${userInput}"`);
+        }
+
+        setIsThinking(false);
+        return { text: response, intent };
+      };
+
+      const handleSend = async (e) => {
+        e.preventDefault();
+        if (!input.trim()) return;
+
+        const userMessage = {
+          sender: 'user',
+          text: input,
+          timestamp: new Date(),
+        };
+        setMessages([...messages, userMessage]);
+        setInput('');
+
+        const { text, intent } = await simulateBackend(input);
+        const aiMessage = {
+          sender: 'ai',
+          text,
+          timestamp: new Date(),
+        };
+
+        // Simulate reward system
+        if (intent === 'math_quiz') {
+          aiMessage.text += `\nGreat job! You earned 10 points! Want a ${userProfile.favorite_theme} fun fact?`;
+        }
+
+        setMessages((prev) => [...prev, aiMessage]);
+      };
+
+      return (
+        <div className="flex flex-col h-screen bg-gray-100">
+          {/* Header */}
+          <div className="bg-green-500 text-white p-4 flex items-center">
+            <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center mr-3">
+              <span className="text-green-500 text-xl font-bold">AI</span>
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold">Kids AI Chat</h1>
+              <p className="text-sm">Online • Ready to chat!</p>
+            </div>
+          </div>
+
+          {/* Chat Area */}
+          <div
+            className="flex-1 p-4 overflow-y-auto"
+            style={{
+              backgroundImage: `url('https://source.unsplash.com/1600x900/?${userProfile.favorite_theme}')`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundAttachment: 'fixed',
+            }}
+          >
+            {messages.map((msg, index) => (
+              <div
+                key={index}
+                className={`flex mb-4 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-xs md:max-w-md p-3 rounded-lg ${
+                    msg.sender === 'user'
+                      ? 'bg-green-500 text-white'
+                      : 'bg-white text-gray-800'
+                  }`}
+                >
+                  <p>{msg.text}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {msg.timestamp.toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                </div>
+              </div>
+            ))}
+            {isThinking && (
+              <div className="flex justify-start">
+                <div className="bg-white p-3 rounded-lg">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
+                    <div
+                      className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                      style={{ animationDelay: '0.2s' }}
+                    ></div>
+                    <div
+                      className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                      style={{ animationDelay: '0.4s' }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input Area */}
+          <form
+            onSubmit={handleSend}
+            className="bg-white p-4 flex items-center border-t border-gray-300"
+          >
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type a message..."
+              className="flex-1 p-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+            <button
+              type="submit"
+              className="ml-2 bg-green-500 text-white p-2 rounded-full hover:bg-green-600 disabled:bg-gray-400"
+              disabled={!input.trim() || isThinking}
+            >
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                />
+              </svg>
+            </button>
+          </form>
+        </div>
+      );
+    };
+
+    ReactDOM.render(<ChatApp />, document.getElementById('root'));
+  </script>
 </body>
 </html>
