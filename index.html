@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kids AI ChatBot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-r from-blue-200 to-purple-200 min-h-screen flex flex-col items-center justify-center">
+    <div id="root" class="w-full max-w-2xl p-6"></div>
+    <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.9/babel.min.js"></script>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function App() {
+            const [name, setName] = useState("Emma");
+            const [theme, setTheme] = useState("dragons");
+             const [age, setAge] = useState(7);  // Add age state
+            const [input, setInput] = useState("");
+            const [messages, setMessages] = useState([]);
+            const [points, setPoints] = useState(0);
+            const [ws, setWs] = useState(null);
+            
+            // Remove showEscalation state since we won't use buttons anymore
+            const [showEscalation, setShowEscalation] = useState(false);
+
+            useEffect(() => {
+                const socket = new WebSocket("ws://localhost:8000/ws");
+                socket.onopen = () => console.log("WebSocket connected");
+                socket.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    setMessages((prev) => [...prev, { text: data.output, isUser: false, intent: data.intent }]);
+                    setPoints(data.points);
+                    setShowEscalation(data.intent === "escalation");
+                    // Scroll to bottom
+                    const chat = document.getElementById("chat-container");
+                    chat.scrollTop = chat.scrollHeight;
+                };
+                socket.onclose = () => console.log("WebSocket disconnected");
+                socket.onerror = (error) => console.error("WebSocket error:", error);
+                setWs(socket);
+
+                return () => socket.close();
+            }, []);
+
+            const sendMessage = () => {
+                if (ws && input.trim()) {
+                    const message = { input, name, theme, age };  // Include age in message
+                    ws.send(JSON.stringify(message));
+                    setMessages((prev) => [...prev, { text: input, isUser: true }]);
+                    setInput("");
+                }
+            };
+
+            const handleEscalationResponse = (response) => {
+                if (ws) {
+                    ws.send(JSON.stringify({ input: response, name, theme }));
+                    setShowEscalation(false);
+                }
+            };
+
+            const handleKeyPress = (e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            };
+
+            return (
+                <div className="bg-white rounded-lg shadow-xl p-6 w-full">
+                    <h1 className="text-3xl font-bold text-center text-purple-600 mb-4">Kids AI ChatBot</h1>
+                    <div className="mb-4 flex space-x-4">
+                        <input
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            placeholder="Your name"
+                            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
+                        />
+                        <input
+                            type="number"
+                            value={age}
+                            onChange={(e) => setAge(Number(e.target.value))}
+                            placeholder="Your age"
+                            min="4"
+                            max="12"
+                            className="w-24 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
+                        />
+                        <input
+                            type="text"
+                            value={theme}
+                            onChange={(e) => setTheme(e.target.value)}
+                            placeholder="Favorite theme (e.g., dragons)"
+                            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
+                        />
+                    </div>
+                    <div id="chat-container" className="h-96 overflow-y-auto mb-4 p-4 bg-gray-100 rounded-lg">
+                        {messages.map((msg, index) => (
+                            <div
+                                key={index}
+                                className={`mb-2 p-3 rounded-lg max-w-xs ${msg.isUser ? "bg-purple-500 text-white ml-auto" : "bg-blue-200 text-gray-800"}`}
+                            >
+                                {msg.text}
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <input
+                            type="text"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            onKeyPress={handleKeyPress}
+                            placeholder="Type your message..."
+                            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
+                            disabled={showEscalation}
+                        />
+                        <button
+                            onClick={sendMessage}
+                            className="bg-purple-600 text-white p-2 rounded-lg hover:bg-purple-700 disabled:bg-gray-400"
+                            disabled={showEscalation}
+                        >
+                            Send
+                        </button>
+                    </div>
+                    {showEscalation && (
+                        <div className="mt-4 flex space-x-4 justify-center">
+                            <button
+                                onClick={() => handleEscalationResponse("yes")}
+                                className="bg-green-500 text-white p-2 rounded-lg hover:bg-green-600"
+                            >
+                                Yes, talk to a parent
+                            </button>
+                            <button
+                                onClick={() => handleEscalationResponse("no")}
+                                className="bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600"
+                            >
+                                No, tell a story
+                            </button>
+                        </div>
+                    )}
+                    <p className="text-center text-gray-600 mt-4">Points: {points}</p>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById("root"));
+    </script>
+</body>
+</html>

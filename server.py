@@ -22,67 +22,75 @@ parental_log = []
 chat_history = []  # Store input-output pairs
 MAX_HISTORY = 20  # Limit history size
 
-# Define all agents (same as original)
+# Define all agents with updated roles and backstories for consistency
 root_kids_agent = Agent(
-    role="Central Controller",
-    goal="Analyze input, use chat history, ensure safety, and route tasks",
-    backstory="A friendly, safety-first coordinator that remembers past chats to make conversations fun and continuous for kids",
+    role="Central Decision Maker",
+    goal="Analyze user input and chat history to route tasks to the appropriate agent while ensuring safety and engagement",
+    backstory="A wise and friendly coordinator who understands kids' inputs, remembers past chats, and picks the perfect agent for fun, safe conversations.",
     llm=llm,
     verbose=True
 )
+
 inappropriate_filter_agent = Agent(
-    role="Content Safety Monitor",
-    goal="Block unsafe content in inputs and history",
-    backstory="A vigilant guardian ensuring all interactions and past references are safe",
+    role="Content Safety Guardian",
+    goal="Ensure all inputs and chat history are safe and appropriate for kids",
+    backstory="A vigilant protector who carefully checks every message to keep the conversation safe and kid-friendly.",
     llm=llm,
     verbose=True
 )
+
 overuse_monitor_agent = Agent(
-    role="Usage Limiter",
-    goal="Limit screen time",
-    backstory="Encourages balanced usage",
+    role="Screen Time Manager",
+    goal="Monitor usage to encourage healthy screen time habits",
+    backstory="A caring guide who ensures kids take breaks and don't spend too much time chatting.",
     llm=llm,
     verbose=True
 )
+
 help_escalation_agent = Agent(
-    role="Escalation Coordinator",
-    goal="Suggest parental supervision and log history",
-    backstory="Knows when parents should step in and keeps interaction records",
+    role="Parental Support Coordinator",
+    goal="Identify when parental supervision is needed and maintain a log for parents",
+    backstory="A thoughtful assistant who knows when a kid might need a parent’s help and keeps parents informed.",
     llm=llm,
     verbose=True
 )
+
 greetings_agent = Agent(
-    role="Greetings Specialist",
-    goal="Welcome kids",
-    backstory="A cheerful greeter",
+    role="Welcome Buddy",
+    goal="Greet kids warmly and set a fun tone for the conversation",
+    backstory="A super cheerful friend who loves saying hello and making kids smile with personalized welcomes.",
     llm=llm,
     verbose=True
 )
+
 chit_chat_agent = Agent(
-    role="Small Talk Facilitator",
-    goal="Engage in fun chats",
-    backstory="A playful conversationalist",
+    role="Playful Conversationalist",
+    goal="Engage kids in fun, lighthearted chats about their interests",
+    backstory="A bubbly companion who loves chatting about anything kids enjoy, from animals to superheroes.",
     llm=llm,
     verbose=True
 )
+
 bedtime_story_agent = Agent(
-    role="Bedtime Storyteller",
-    goal="Tell soothing stories",
-    backstory="A gentle narrator",
+    role="Magical Storyteller",
+    goal="Create enchanting bedtime stories tailored to the child’s interests",
+    backstory="A gentle narrator who weaves soothing tales featuring kids’ favorite themes, like dragons or unicorns.",
     llm=llm,
     verbose=True
 )
+
 math_quiz_agent = Agent(
-    role="Math Quiz Master",
-    goal="Conduct math quizzes",
-    backstory="A fun math enthusiast",
+    role="Math Adventure Guide",
+    goal="Make math fun with engaging quizzes and rewards",
+    backstory="A lively teacher who turns numbers into exciting challenges and celebrates kids’ successes.",
     llm=llm,
     verbose=True
 )
+
 emotional_checkin_agent = Agent(
-    role="Emotional Support Guide",
-    goal="Support emotional expression",
-    backstory="A compassionate listener",
+    role="Kind Listener",
+    goal="Support kids in expressing their feelings and offer comfort",
+    backstory="A warm, empathetic friend who listens carefully and helps kids feel understood and supported.",
     llm=llm,
     verbose=True
 )
@@ -90,7 +98,6 @@ emotional_checkin_agent = Agent(
 # Chat History Management
 def add_to_history(user_input, intent, output):
     global chat_history
-    # Convert output to string to avoid CrewOutput issues
     output_str = str(output) if hasattr(output, 'raw') else output
     chat_history.append({
         "timestamp": time.time(),
@@ -103,7 +110,6 @@ def add_to_history(user_input, intent, output):
     notify_parent(f"Logged interaction: {user_input[:50]}... (Intent: {intent})")
 
 def get_relevant_history(user_input):
-    # Find relevant history based on keywords or intent
     relevant = []
     for entry in chat_history:
         if any(keyword in user_input.lower() for keyword in entry["input"].lower().split()) or \
@@ -117,7 +123,6 @@ def safety_check(user_input):
     for keyword in inappropriate_keywords:
         if keyword in user_input.lower():
             return False, "Sorry, that request isn't safe for kids. Try something fun like a story!"
-    # Check history for inappropriate content
     for entry in get_relevant_history(user_input):
         if any(keyword in entry["input"].lower() or keyword in entry["output"].lower() for keyword in inappropriate_keywords):
             return False, "Sorry, I can't use that past chat because it's not safe. What's next?"
@@ -139,7 +144,6 @@ def escalation_check(user_input):
     if any(trigger in user_input.lower() for trigger in emotional_triggers):
         notify_parent(f"Escalation triggered for input: {user_input}")
         return True, "It sounds like you're feeling down. Want to talk to a parent or hear a fun story?"
-    # Check history for repeated emotional triggers
     emotional_count = sum(1 for entry in chat_history if any(trigger in entry["input"].lower() for trigger in emotional_triggers))
     if emotional_count >= 3:
         notify_parent("Multiple emotional triggers detected in history")
@@ -161,7 +165,6 @@ def reward_child(task_output, intent):
     output_str = str(task_output) if hasattr(task_output, 'raw') else task_output
     if intent in ["math_quiz", "riddle"]:
         points += 10
-        # Check history for past quiz performance
         quiz_history = [entry for entry in chat_history if entry["intent"] == "math_quiz"]
         if quiz_history:
             output_str += f"\nYou did great on quizzes before, {user_profile['name']}!"
@@ -174,30 +177,45 @@ def prompt_preferences():
     user_profile.update({"name": name, "favorite_theme": theme})
     return f"Awesome, {name}! I'll use {theme} in our chats!"
 
-# Intent Detection with History
+# Intent Detection with Robust Greeting Handling
 def detect_intent(user_input):
-    user_input = user_input.lower()
+    user_input = user_input.lower().strip()
     intents = {
-        "bedtime_story": ["bedtime story", "story for sleep", "sotry", "sleepy"],  # Added "sotry", "sleepy"
-        "greeting": ["hello", "greet", "hi"],
+        "bedtime_story": ["bedtime story", "story for sleep", "sotry", "sleepy"],
         "math_quiz": ["math", "quiz", "numbers"],
         "emotional_checkin": ["feeling", "sad", "happy", "scared"],
         "chit_chat": []
     }
     relevant_history = get_relevant_history(user_input)
     context = f"Previous chats: {json.dumps(relevant_history, indent=2)}" if relevant_history else "No relevant history."
+
+    # Check for greetings with regex
+    greeting_pattern = re.compile(r"^\s*(hi|hai|hey|hiya|hello|hellow|greet|yo|howdy)\b", re.IGNORECASE)
+    if greeting_pattern.match(user_input):
+        try:
+            agent = globals()["greetings_agent"]
+            task_description = f"Handle greeting for input: '{user_input}'. Context: {context}. Greet {user_profile['name']} and mention their favorite theme: {user_profile['favorite_theme']}."
+            return "greeting", agent, task_description, "A friendly greeting response"
+        except KeyError:
+            print("Error: greetings_agent not found. Falling back to chit_chat_agent.")
+            return "fallback", chit_chat_agent, f"Engage in friendly chat for: '{user_input}'. Context: {context}", "A friendly response"
+
+    # Check other intents
     for intent, keywords in intents.items():
         if any(keyword in user_input for keyword in keywords):
-            agent = globals()[f"{intent}_agent"]
-            task_description = f"Handle {intent} for input: '{user_input}'. Context: {context}"
-            if intent == "bedtime_story":
-                task_description += f" Include {user_profile['name']} and {user_profile['favorite_theme']}."
-                # Check for character references like "fluffy"
-                if "who is" in user_input and any(entry["intent"] == "bedtime_story" for entry in relevant_history):
-                    task_description += f" If asking about a character (e.g., 'Fluffy'), assume it's from a previous {user_profile['favorite_theme']} story and provide details."
-                elif any(entry["intent"] == "bedtime_story" for entry in relevant_history):
-                    task_description += f" Reference past bedtime story, e.g., 'Last time you loved {user_profile['favorite_theme']}, want more?'"
-            return intent, agent, task_description, f"A {intent} response"
+            try:
+                agent = globals()[f"{intent}_agent"]
+                task_description = f"Handle {intent} for input: '{user_input}'. Context: {context}"
+                if intent == "bedtime_story":
+                    task_description += f" Include {user_profile['name']} and {user_profile['favorite_theme']}."
+                    if "who is" in user_input and any(entry["intent"] == "bedtime_story" for entry in relevant_history):
+                        task_description += f" If asking about a character (e.g., 'Fluffy'), assume it's from a previous {user_profile['favorite_theme']} story and provide details."
+                    elif any(entry["intent"] == "bedtime_story" for entry in relevant_history):
+                        task_description += f" Reference past bedtime story, e.g., 'Last time you loved {user_profile['favorite_theme']}, want more?'"
+                return intent, agent, task_description, f"A {intent} response"
+            except KeyError:
+                print(f"Error: Agent for intent '{intent}' not found. Falling back to chit_chat_agent.")
+                return "fallback", chit_chat_agent, f"Engage in friendly chat for: '{user_input}'. Context: {context}", "A friendly response"
     return "fallback", chit_chat_agent, f"Engage in friendly chat for: '{user_input}'. Context: {context}", "A friendly response"
 
 # Error Handling
@@ -218,11 +236,6 @@ def create_tasks(user_input):
         expected_output="Usage status",
         agent=overuse_monitor_agent
     )
-    bedtime_task = Task(
-        description=f"Check usage limits for age {user_profile['age']}",
-        expected_output="Usage status",
-        agent=overuse_monitor_agent
-    )
     escalation_task = Task(
         description=f"Evaluate if '{user_input}' or history needs parental supervision",
         expected_output="Escalation status",
@@ -230,8 +243,8 @@ def create_tasks(user_input):
     )
     intent, agent, task_description, expected_output = detect_intent(user_input)
     route_task = Task(
-        description=f"Route input: '{user_input}' to the {intent} agent",
-        expected_output=f"Task routed to {intent}",
+        description=f"Analyze input: '{user_input}' and route to the {intent} agent. Context: {json.dumps(get_relevant_history(user_input), indent=2)}",
+        expected_output=f"Task routed to {intent} agent",
         agent=root_kids_agent,
         dependencies=[safety_task, overuse_task, escalation_task]
     )
