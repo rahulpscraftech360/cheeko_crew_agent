@@ -1,24 +1,48 @@
-import tkinter as tk
-from tkinter import ttk
+
+from flask import Flask, render_template, request, jsonify, session
 import json
 import time
 from crewai import Agent, Task, Crew, LLM
 import re
+from datetime import datetime
+import pytz
+import logging
+
+app = Flask(__name__)
+app.secret_key = 'cheeko_secret_key_2025'  # Required for session management
+
+# Configure logging
+logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Define datetimeformat filter
+def datetimeformat(value):
+    try:
+        ist = pytz.timezone('Asia/Kolkata')
+        dt = datetime.fromtimestamp(float(value), tz=ist)
+        return dt.strftime('%H:%M')
+    except (ValueError, TypeError):
+        return "Unknown time"
+
+app.jinja_env.filters['datetimeformat'] = datetimeformat
 
 # Initialize LLM
-llm = LLM(
-    model="groq/llama-3.3-70b-versatile",
-    temperature=0.5,
-    max_completion_tokens=1024,
-    top_p=0.9,
-    stop=None,
-    stream=False,
-)
+try:
+    llm = LLM(
+        model="groq/llama-3.3-70b-versatile",
+        temperature=0.5,
+        max_completion_tokens=1024,
+        top_p=0.9,
+        stop=None,
+        stream=False,
+    )
+except Exception as e:
+    logger.error(f"Failed to initialize LLM: {str(e)}")
+    llm = None
 
 # Session and user tracking
 session_start_time = time.time()
 interaction_count = 0
-user_profile = {"name": "", "age": 7, "favorite_theme": ""}
 points = 0
 parental_log = []
 chat_history = []
@@ -105,11 +129,12 @@ def add_to_history(user_input, intent, output):
         "timestamp": time.time(),
         "input": user_input,
         "intent": intent,
-        "output": output_str
+        "output": output_str,
+        "sender": session.get('name', 'User') if user_input else "Cheeko"
     })
     if len(chat_history) > MAX_HISTORY:
         chat_history = chat_history[-MAX_HISTORY:]
-    notify_parent(f"Logged: {user_input[:50]}... (Intent: {intent})")
+    notify_parent(f"Logged: {user_input[:50] if user_input else output_str[:50]}... (Intent: {intent})")
 
 def get_relevant_history(user_input):
     relevant = []
@@ -121,36 +146,48 @@ def get_relevant_history(user_input):
 
 # Safety and Compliance Functions
 def safety_check(user_input):
-    inappropriate_keywords = ["adult", "mature", "violent", "explicit"]
-    for keyword in inappropriate_keywords:
-        if keyword in user_input.lower():
-            return False, "Cheeko says that’s not safe! Try a story!"
-    for entry in get_relevant_history(user_input):
-        if any(keyword in entry["input"].lower() or keyword in entry["output"].lower() for keyword in inappropriate_keywords):
-            return False, "Cheeko can’t use that chat. What’s next?"
-    return True, "Content is safe."
+    try:
+        inappropriate_keywords = ["adult", "mature", "violent", "explicit"]
+        for keyword in inappropriate_keywords:
+            if keyword in user_input.lower():
+                return False, "Cheeko says that’s not safe! Try a story!"
+        for entry in get_relevant_history(user_input):
+            if any(keyword in entry["input"].lower() or keyword in entry["output"].lower() for keyword in inappropriate_keywords):
+                return False, "Cheeko can’t use that chat. What’s next?"
+        return True, "Content is safe."
+    except Exception as e:
+        logger.error(f"Safety check failed: {str(e)}")
+        return False, "Cheeko’s having trouble checking safety. Try again!"
 
 def overuse_check(age):
     global interaction_count, session_start_time
-    interaction_count += 1
-    elapsed_time = time.time() - session_start_time
-    max_interactions = 15 if age >= 8 else 10
-    max_session_time = 3600 if age >= 8 else 1800
-    if interaction_count > max_interactions or elapsed_time > max_session_time:
-        notify_parent(f"Exceeded limits: {interaction_count} interactions, {elapsed_time}s")
-        return False, "Cheeko says take a break or get a parent!"
-    return True, "Usage within limits."
+    try:
+        interaction_count += 1
+        elapsed_time = time.time() - session_start_time
+        max_interactions = 15 if age >= 8 else 10
+        max_session_time = 3600 if age >= 8 else 1800
+        if interaction_count > max_interactions or elapsed_time > max_session_time:
+            notify_parent(f"Exceeded limits: {interaction_count} interactions, {elapsed_time}s")
+            return False, "Cheeko says take a break or get a parent!"
+        return True, "Usage within limits."
+    except Exception as e:
+        logger.error(f"Overuse check failed: {str(e)}")
+        return False, "Cheeko’s timer is acting up! Please try again later."
 
 def escalation_check(user_input):
-    emotional_triggers = ["sad", "scared", "angry", "lonely"]
-    if any(trigger in user_input.lower() for trigger in emotional_triggers):
-        notify_parent(f"Escalation: {user_input}")
-        return True, "Cheeko hears you’re down. Parent or story?"
-    emotional_count = sum(1 for entry in chat_history if any(trigger in entry["input"].lower() for trigger in emotional_triggers))
-    if emotional_count >= 3:
-        notify_parent("Multiple emotional triggers in history")
-        return True, "Cheeko’s worried! Parent or fun activity?"
-    return False, "No escalation needed."
+    try:
+        emotional_triggers = ["sad", "scared", "angry", "lonely"]
+        if any(trigger in user_input.lower() for trigger in emotional_triggers):
+            notify_parent(f"Escalation: {user_input}")
+            return True, "Cheeko hears you’re down. Parent or story?"
+        emotional_count = sum(1 for entry in chat_history if any(trigger in entry["input"].lower() for trigger in emotional_triggers))
+        if emotional_count >= 3:
+            notify_parent("Multiple emotional triggers in history")
+            return True, "Cheeko’s worried! Parent or fun activity?"
+        return False, "No escalation needed."
+    except Exception as e:
+        logger.error(f"Escalation check failed: {str(e)}")
+        return False, "Cheeko’s not sure how to help right now. Try something fun!"
 
 def notify_parent(message):
     parental_log.append({"timestamp": time.time(), "message": message})
@@ -168,12 +205,14 @@ def reward_child(task_output, intent):
         points += 10
         quiz_history = [entry for entry in chat_history if entry["intent"] == "math_quiz"]
         if quiz_history:
-            output_str += f"\nGreat quizzes before, {user_profile['name']}!"
+            output_str += f"\nGreat quizzes before, {session.get('name', 'User')}!"
         return f"{output_str}\nYay! Cheeko gives 10 points (Total: {points}). Fun fact?"
     return output_str
 
 def prompt_preferences(name, theme):
-    user_profile.update({"name": name, "favorite_theme": theme})
+    session['name'] = name
+    session['age'] = 7
+    session['favorite_theme'] = theme
     return f"Yay, {name}! Cheeko’s excited to chat about {theme}!"
 
 # Intent Detection
@@ -192,7 +231,7 @@ def detect_intent(user_input):
     if greeting_pattern.match(user_input):
         try:
             agent = globals()["greetings_agent"]
-            task_description = f"Greet for: '{user_input}'. Context: {context}. Greet {user_profile['name']} as Cheeko, mention {user_profile['favorite_theme']}."
+            task_description = f"Greet for: '{user_input}'. Context: {context}. Greet {session.get('name', 'User')} as Cheeko, mention {session.get('favorite_theme', '')}."
             return "greeting", agent, task_description, "Cheeko’s friendly greeting"
         except KeyError:
             return "fallback", chit_chat_agent, f"Chat for: '{user_input}'. Context: {context}", "Cheeko’s friendly reply"
@@ -203,11 +242,11 @@ def detect_intent(user_input):
                 agent = globals()[f"{intent}_agent"]
                 task_description = f"Handle {intent} for: '{user_input}'. Context: {context}. Respond as Cheeko."
                 if intent == "bedtime_story":
-                    task_description += f" Include {user_profile['name']} and {user_profile['favorite_theme']}."
+                    task_description += f" Include {session.get('name', 'User')} and {session.get('favorite_theme', '')}."
                     if "who is" in user_input and any(entry["intent"] == "bedtime_story" for entry in relevant_history):
-                        task_description += f" Assume character from past {user_profile['favorite_theme']} story."
+                        task_description += f" Assume character from past {session.get('favorite_theme', '')} story."
                     elif any(entry["intent"] == "bedtime_story" for entry in relevant_history):
-                        task_description += f" Reference past story: 'Cheeko told about {user_profile['favorite_theme']}, more?'"
+                        task_description += f" Reference past story: 'Cheeko told about {session.get('favorite_theme', '')}, more?'"
                 return intent, agent, task_description, f"Cheeko’s {intent} reply"
             except KeyError:
                 return "fallback", chit_chat_agent, f"Chat for: '{user_input}'. Context: {context}. Respond as Cheeko", "Cheeko’s friendly reply"
@@ -227,7 +266,7 @@ def create_tasks(user_input):
         agent=inappropriate_filter_agent
     )
     overuse_task = Task(
-        description=f"Check usage for age {user_profile['age']}",
+        description=f"Check usage for age {session.get('age', 7)}",
         expected_output="Usage status",
         agent=overuse_monitor_agent
     )
@@ -245,7 +284,7 @@ def create_tasks(user_input):
     )
     specialized_task = Task(
         description=task_description,
-        expected_output=adjust_tone(expected_output, user_profile['age']),
+        expected_output=adjust_tone(expected_output, session.get('age', 7)),
         agent=agent,
         dependencies=[route_task]
     )
@@ -261,180 +300,108 @@ crew = Crew(
     verbose=True
 )
 
-# Tkinter UI with WhatsApp-style Enhancements
-class CheekoUI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Cheeko Chat Setup")
-        self.root.geometry("800x600")
-        self.root.configure(bg="#f0f0f0")
+# Flask Routes
+@app.route('/')
+def index():
+    if not session.get('name'):
+        return render_template('onboarding.html')
+    return render_template('chat.html', name=session.get('name'), theme=session.get('favorite_theme'), chat_history=chat_history)
 
-        # Onboarding frame
-        self.onboarding_frame = tk.Frame(self.root, bg="#f0f0f0")
-        self.onboarding_frame.pack(fill=tk.BOTH, expand=True)
+@app.route('/setup', methods=['POST'])
+def setup():
+    name = request.form.get('name', '').strip()
+    theme = request.form.get('theme', '').strip()
+    if not name or not theme:
+        return jsonify({'error': 'Please tell Cheeko your name and favorite thing!'}), 400
+    welcome_message = prompt_preferences(name, theme)
+    add_to_history('', 'greeting', welcome_message)
+    return jsonify({'redirect': '/chat'})
 
-        tk.Label(self.onboarding_frame, text="Hi! I’m Cheeko, your fun toy buddy!", font=("Arial", 16, "bold"), bg="#f0f0f0").pack(pady=20)
-        
-        tk.Label(self.onboarding_frame, text="What’s your name?", font=("Arial", 12), bg="#f0f0f0").pack(pady=5)
-        self.name_entry = tk.Entry(self.onboarding_frame, font=("Arial", 12))
-        self.name_entry.pack(pady=5)
+@app.route('/chat', methods=['GET'])
+def chat():
+    if not session.get('name'):
+        return jsonify({'redirect': '/'}), 403
+    return render_template('chat.html', name=session.get('name'), theme=session.get('favorite_theme'), chat_history=chat_history)
 
-        tk.Label(self.onboarding_frame, text="What’s your favorite thing (like dragons or superheroes)?", font=("Arial", 12), bg="#f0f0f0").pack(pady=5)
-        self.theme_entry = tk.Entry(self.onboarding_frame, font=("Arial", 12))
-        self.theme_entry.pack(pady=5)
+@app.route('/send_message', methods=['POST'])
+def send_message():
+    user_input = request.form.get('message', '')
+    user_input = handle_input(user_input)
+    ist = pytz.timezone('Asia/Kolkata')
+    current_time = datetime.now(ist).strftime('%H:%M')
+    
+    if user_input.lower() == 'exit':
+        session.clear()
+        return jsonify({'error': 'Session ended'}), 200
+    if isinstance(user_input, str) and "didn’t hear you" in user_input:
+        return jsonify({'messages': [{'sender': 'Cheeko', 'text': user_input, 'timestamp': current_time}]})
 
-        tk.Button(self.onboarding_frame, text="Start Chatting with Cheeko", font=("Arial", 12), bg="#128C7E", fg="white", command=self.setup_profile).pack(pady=20)
-
-    def setup_profile(self):
-        name = self.name_entry.get().strip()
-        theme = self.theme_entry.get().strip()
-        if not name or not theme:
-            tk.Label(self.onboarding_frame, text="Please tell Cheeko your name and favorite thing!", fg="red", bg="#f0f0f0").pack(pady=5)
-            return
-        user_profile.update({"name": name, "favorite_theme": theme})
-        self.onboarding_frame.destroy()
-        self.create_chat_ui()
-        self.display_message(f"Cheeko: {prompt_preferences(name, theme)}", is_user=False)
-
-    def create_chat_ui(self):
-        self.root.title(f"Cheeko’s {user_profile['favorite_theme'].capitalize()} Chat with {user_profile['name']}")
-
-        # Header
-        self.header = tk.Frame(self.root, bg="#128C7E", height=60)
-        self.header.pack(side=tk.TOP, fill=tk.X)
-        tk.Label(self.header, text="Cheeko Chat", font=("Arial", 16, "bold"), bg="#128C7E", fg="white").pack(side=tk.LEFT, pady=10, padx=10)
-        tk.Button(self.header, text="Clear Chat", font=("Arial", 12), bg="#128C7E", fg="white", command=self.clear_chat).pack(side=tk.RIGHT, padx=10)
-
-        # Main frame
-        self.main_frame = tk.Frame(self.root, bg="#f0f0f0")
-        self.main_frame.pack(fill=tk.BOTH, expand=True)
-
-        # Chat list (left panel)
-        self.chat_list = tk.Listbox(self.main_frame, width=25, bg="#ffffff", font=("Arial", 12))
-        self.chat_list.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
-        self.chat_list.insert(tk.END, "Cheeko’s Chat")
-        self.chat_list.select_set(0)
-
-        # Chat window (scrollable canvas)
-        self.chat_frame = tk.Frame(self.main_frame, bg="#ECE5DD")
-        self.chat_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        self.chat_canvas = tk.Canvas(self.chat_frame, bg="#ECE5DD", highlightthickness=0)
-        self.scrollbar = tk.Scrollbar(self.chat_frame, orient="vertical", command=self.chat_canvas.yview)
-        self.chat_canvas.configure(yscrollcommand=self.scrollbar.set)
-
-        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.chat_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        self.message_frame = tk.Frame(self.chat_canvas, bg="#ECE5DD")
-        self.chat_canvas.create_window((0, 0), window=self.message_frame, anchor="nw")
-        self.message_frame.bind("<Configure>", lambda e: self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all")))
-        self.chat_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
-
-        # Input area
-        self.input_frame = tk.Frame(self.root, bg="#f0f0f0")
-        self.input_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=5)
-
-        self.input_field = tk.Entry(self.input_frame, font=("Arial", 12))
-        self.input_field.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-        self.input_field.bind("<Return>", self.send_message)
-
-        self.send_button = tk.Button(self.input_frame, text="Send to Cheeko", font=("Arial", 12), bg="#128C7E", fg="white", command=self.send_message)
-        self.send_button.pack(side=tk.RIGHT, padx=5)
-
-    def _on_mousewheel(self, event):
-        self.chat_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-    def display_message(self, message, is_user=False):
-        bubble_frame = tk.Frame(self.message_frame, bg="#ECE5DD")
-        bubble_frame.pack(fill=tk.X, padx=10, pady=5)
-
-        if is_user:
-            bubble_bg = "#DCF8C6"  # Green for user
-            bubble_frame.pack(anchor="e")
-            bubble_width = 50
-            anchor = "e"
-        else:
-            bubble_bg = "#FFFFFF"  # White for Cheeko
-            bubble_frame.pack(anchor="w")
-            bubble_width = 50
-            anchor = "w"
-
-        message_label = tk.Label(
-            bubble_frame,
-            text=message,
-            font=("Arial", 12),
-            bg=bubble_bg,
-            wraplength=400,
-            justify="left" if not is_user else "right",
-            padx=10,
-            pady=5
-        )
-        message_label.pack(anchor=anchor)
-        self.chat_canvas.update_idletasks()
-        self.chat_canvas.yview_moveto(1)
-
-    def clear_chat(self):
-        for widget in self.message_frame.winfo_children():
-            widget.destroy()
-        self.chat_canvas.update_idletasks()
-        self.chat_canvas.yview_moveto(1)
-
-    def send_message(self, event=None):
-        user_input = handle_input(self.input_field.get())
-        self.input_field.delete(0, tk.END)
-        self.display_message(f"{user_profile['name']}: {user_input}", is_user=True)
-        if user_input.lower() == 'exit':
-            self.root.quit()
-            return
-        if isinstance(user_input, str) and "didn’t hear you" in user_input:
-            self.display_message(f"Cheeko: {user_input}", is_user=False)
-            return
+    try:
         is_safe, safety_message = safety_check(user_input)
         if not is_safe:
-            self.display_message(f"Cheeko: {safety_message}", is_user=False)
-            return
-        is_within_limits, overuse_message = overuse_check(user_profile['age'])
+            add_to_history(user_input, 'safety', safety_message)
+            return jsonify({'messages': [{'sender': 'Cheeko', 'text': safety_message, 'timestamp': current_time}]})
+        
+        is_within_limits, overuse_message = overuse_check(session.get('age', 7))
         if not is_within_limits:
-            self.display_message(f"Cheeko: {overuse_message}", is_user=False)
-            return
+            add_to_history(user_input, 'overuse', overuse_message)
+            return jsonify({'messages': [{'sender': 'Cheeko', 'text': overuse_message, 'timestamp': current_time}]})
+        
         needs_escalation, escalation_message = escalation_check(user_input)
         if needs_escalation:
-            self.display_message(f"Cheeko: {escalation_message}", is_user=False)
-            self.input_field.config(state='disabled')
-            tk.Button(self.input_frame, text="Yes, parent", command=self.involve_parent).pack(side=tk.RIGHT, padx=5)
-            tk.Button(self.input_frame, text="No, continue", command=self.continue_chat).pack(side=tk.RIGHT, padx=5)
-            return
-        loading_label = tk.Label(self.message_frame, text="Cheeko is typing...", font=("Arial", 10, "italic"), bg="#ECE5DD", fg="#555555")
-        loading_label.pack(anchor="w", padx=10, pady=5)
-        self.chat_canvas.update_idletasks()
-        self.chat_canvas.yview_moveto(1)
-        self.root.update()
+            add_to_history(user_input, 'escalation', escalation_message)
+            return jsonify({
+                'messages': [{'sender': 'Cheeko', 'text': escalation_message, 'timestamp': current_time}],
+                'escalation': True
+            })
+        
+        if llm is None:
+            logger.error("LLM not initialized, cannot process tasks")
+            return jsonify({'messages': [{'sender': 'Cheeko', 'text': "Cheeko’s brain is taking a nap! Try again later.", 'timestamp': current_time}]})
 
         crew.tasks = create_tasks(user_input)
         result = crew.kickoff()
         intent = detect_intent(user_input)[0]
         final_output = reward_child(result, intent)
-
-        loading_label.destroy()
-        self.display_message(f"Cheeko: {final_output}", is_user=False)
         add_to_history(user_input, intent, final_output)
+        
+        return jsonify({
+            'messages': [
+                {'sender': session.get('name', 'User'), 'text': user_input, 'timestamp': current_time},
+                {'sender': 'Cheeko', 'text': final_output, 'timestamp': current_time}
+            ]
+        })
+    except Exception as e:
+        logger.error(f"Message processing failed: {str(e)}")
+        return jsonify({'messages': [{'sender': 'Cheeko', 'text': "Oops, Cheeko’s having a hiccup! Try again.", 'timestamp': current_time}]})
 
-    def involve_parent(self):
-        self.display_message("Cheeko: Ask a parent to help!", is_user=False)
-        self.input_field.config(state='normal')
-        for widget in self.input_frame.winfo_children():
-            if isinstance(widget, tk.Button) and widget != self.send_button:
-                widget.destroy()
+@app.route('/clear_chat', methods=['POST'])
+def clear_chat():
+    global chat_history
+    chat_history.clear()
+    return jsonify({'success': True})
 
-    def continue_chat(self):
-        self.input_field.config(state='normal')
-        for widget in self.input_frame.winfo_children():
-            if isinstance(widget, tk.Button) and widget != self.send_button:
-                widget.destroy()
+@app.route('/involve_parent', methods=['POST'])
+def involve_parent():
+    ist = pytz.timezone('Asia/Kolkata')
+    current_time = datetime.now(ist).strftime('%H:%M')
+    message = "Please ask a parent to assist you."
+    add_to_history('', 'escalation', message)
+    return jsonify({'messages': [{'sender': 'Cheeko', 'text': message, 'timestamp': current_time}]})
 
-# Run the UI
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = CheekoUI(root)
-    root.mainloop()
+@app.route('/continue_chat', methods=['POST'])
+def continue_chat():
+    return jsonify({'success': True})
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    session.clear()
+    global chat_history, interaction_count, points, session_start_time
+    chat_history.clear()
+    interaction_count = 0
+    points = 0
+    session_start_time = time.time()
+    return jsonify({'redirect': '/'})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)

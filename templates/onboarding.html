@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cheeko Chat Setup</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f0f0f0; margin: 0; padding: 20px; text-align: center; }
+        .container { max-width: 400px; margin: auto; padding: 20px; background: white; border-radius: 10px; }
+        h1 { color: #128C7E; }
+        input { width: 100%; padding: 10px; margin: 10px 0; font-size: 16px; border: 1px solid #ccc; border-radius: 5px; }
+        button { background-color: #128C7E; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        button:hover { background-color: #0e6b5e; }
+        .error { color: red; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Hi! I’m Cheeko, your fun toy buddy!</h1>
+        <form id="setup-form">
+            <label for="name">What’s your name?</label>
+            <input type="text" id="name" name="name" required>
+            <label for="theme">What’s your favorite thing (like dragons or superheroes)?</label>
+            <input type="text" id="theme" name="theme" required>
+            <button type="submit">Start Chatting with Cheeko</button>
+        </form>
+        <p id="error" class="error" style="display: none;"></p>
+    </div>
+    <script>
+        document.getElementById('setup-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('name').value;
+            const theme = document.getElementById('theme').value;
+            const response = await fetch('/setup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `name=${encodeURIComponent(name)}&theme=${encodeURIComponent(theme)}`
+            });
+            const data = await response.json();
+            if (data.error) {
+                document.getElementById('error').textContent = data.error;
+                document.getElementById('error').style.display = 'block';
+            } else {
+                window.location.href = data.redirect;
+            }
+        });
+    </script>
+</body>
+</html>
