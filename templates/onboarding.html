@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cheeko’s {{ theme|capitalize }} Chat with {{ name }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #ECE5DD; }
+        .header { background: #128C7E; color: white; padding: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { margin: 0; font-size: 20px; }
+        .header button { background: #0e6b5e; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; }
+        .chat-container { height: calc(100vh - 120px); overflow-y: auto; padding: 10px; }
+        .message { max-width: 70%; margin: 5px 10px; padding: 10px; border-radius: 10px; word-wrap: break-word; }
+        .user { background: #DCF8C6; margin-left: auto; text-align: right; }
+        .cheeko { background: #FFFFFF; margin-right: auto; }
+        .timestamp { font-size: 10px; color: #555; }
+        .input-container { position: fixed; bottom: 0; width: 100%; background: #f0f0f0; padding: 10px; display: flex; }
+        input { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; font-size: 16px; }
+        button { background: #128C7E; color: white; border: none; padding: 10px 20px; border-radius: 20px; margin-left: 10px; cursor: pointer; }
+        .loading { font-style: italic; color: #555; text-align: center; }
+        .escalation { text-align: center; margin: 10px; }
+        .escalation button { margin: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Cheeko Chat</h1>
+        <button onclick="clearChat()">Clear Chat</button>
+    </div>
+    <div class="chat-container" id="chat-container">
+        {% for msg in chat_history %}
+            <div class="message {{ 'user' if msg.sender == name else 'cheeko' }}">
+                <strong>{{ msg.sender }}:</strong> {{ msg.output }}
+                <div class="timestamp">{{ msg.timestamp|datetimeformat }}</div>
+            </div>
+        {% endfor %}
+    </div>
+    <div class="input-container">
+        <input type="text" id="message" placeholder="Type a message to Cheeko...">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+    <script>
+        const chatContainer = document.getElementById('chat-container');
+        let isProcessing = false;
+
+        async function sendMessage() {
+            if (isProcessing) return;
+            isProcessing = true;
+            const input = document.getElementById('message');
+            const message = input.value.trim();
+            if (!message) {
+                isProcessing = false;
+                return;
+            }
+            input.value = '';
+
+            const userMessage = document.createElement('div');
+            userMessage.className = 'message user';
+            userMessage.innerHTML = `<strong>{{ name }}:</strong> ${message}<div class="timestamp">${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</div>`;
+            chatContainer.appendChild(userMessage);
+
+            const loading = document.createElement('div');
+            loading.className = 'loading';
+            loading.textContent = 'Cheeko is typing...';
+            chatContainer.appendChild(loading);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            const response = await fetch('/send_message', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `message=${encodeURIComponent(message)}`
+            });
+            const data = await response.json();
+
+            loading.remove();
+            if (data.messages) {
+                data.messages.forEach(msg => {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = `message ${msg.sender === '{{ name }}' ? 'user' : 'cheeko'}`;
+                    messageDiv.innerHTML = `<strong>${msg.sender}:</strong> ${msg.text}<div class="timestamp">${msg.timestamp}</div>`;
+                    chatContainer.appendChild(messageDiv);
+                });
+            }
+            if (data.escalation) {
+                const escalationDiv = document.createElement('div');
+                escalationDiv.className = 'escalation';
+                escalationDiv.innerHTML = `
+                    <button onclick="involveParent()">Yes, involve parent</button>
+                    <button onclick="continueChat()">No, continue</button>
+                `;
+                chatContainer.appendChild(escalationDiv);
+            }
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            isProcessing = false;
+        }
+
+        async function clearChat() {
+            await fetch('/clear_chat', { method: 'POST' });
+            chatContainer.innerHTML = '';
+        }
+
+        async function involveParent() {
+            const response = await fetch('/involve_parent', { method: 'POST' });
+            const data = await response.json();
+            data.messages.forEach(msg => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${msg.sender === '{{ name }}' ? 'user' : 'cheeko'}`;
+                messageDiv.innerHTML = `<strong>${msg.sender}:</strong> ${msg.text}<div class="timestamp">${msg.timestamp}</div>`;
+                chatContainer.appendChild(messageDiv);
+            });
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            document.querySelector('.escalation')?.remove();
+        }
+
+        async function continueChat() {
+            await fetch('/continue_chat', { method: 'POST' });
+            document.querySelector('.escalation')?.remove();
+        }
+
+        document.getElementById('message').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // Auto-scroll to bottom on load
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    </script>
+</body>
+</html>
