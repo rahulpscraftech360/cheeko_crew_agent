@@ -1,2 +1,5 @@
 crewai
 groq
+flask
+gunicorn
+pytz
