@@ -1,5 +1,4 @@
-
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, redirect
 import json
 import time
 from crewai import Agent, Task, Crew, LLM
@@ -120,6 +119,49 @@ emotional_checkin_agent = Agent(
     llm=llm,
     verbose=True
 )
+
+def get_agent_configs():
+    agent_configs = {}
+    for name, obj in globals().items():
+        if isinstance(obj, Agent) and name.endswith('_agent'):
+            agent_configs[name] = {
+                'role': obj.role,
+                'goal': obj.goal,
+                'backstory': obj.backstory
+            }
+    return agent_configs
+
+@app.route('/agent_configs', methods=['GET'])
+def get_agents():
+    if not session.get('name'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    return jsonify(get_agent_configs())
+
+@app.route('/update_agent', methods=['POST'])
+def update_agent():
+    if not session.get('name'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    try:
+        data = request.get_json()
+        agent_name = data.get('agent_name')
+        goal = data.get('goal')
+        backstory = data.get('backstory')
+        
+        if not all([agent_name, goal, backstory]):
+            return jsonify({'error': 'Missing required fields'}), 400
+            
+        if agent_name in globals() and isinstance(globals()[agent_name], Agent):
+            agent = globals()[agent_name]
+            agent.goal = goal
+            agent.backstory = backstory
+            return jsonify({'success': True, 'message': 'Agent updated successfully'})
+        else:
+            return jsonify({'error': 'Agent not found'}), 404
+            
+    except Exception as e:
+        logger.error(f"Agent update failed: {str(e)}")
+        return jsonify({'error': 'Update failed'}), 500
 
 # Chat History Management
 def add_to_history(user_input, intent, output):
@@ -402,6 +444,12 @@ def logout():
     points = 0
     session_start_time = time.time()
     return jsonify({'redirect': '/'})
+
+@app.route('/agents')
+def agents():
+    if not session.get('name'):
+        return redirect('/')
+    return render_template('agents.html')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)

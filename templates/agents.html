@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cheeko Agent Configuration</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #ECE5DD; padding: 20px; }
+        .header { background: #128C7E; color: white; padding: 10px; margin-bottom: 20px; }
+        .header h1 { margin: 0; font-size: 20px; }
+        .agent-card {
+            background: white;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .agent-card h3 { margin-top: 0; color: #128C7E; }
+        textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        button {
+            background: #128C7E;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .success-message { color: green; }
+        .error-message { color: red; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Cheeko Agent Configuration</h1>
+        <button onclick="window.location.href='/chat'">Back to Chat</button>
+    </div>
+    <div id="agents-container"></div>
+
+    <script>
+        async function loadAgents() {
+            try {
+                const response = await fetch('/agent_configs');
+                const agents = await response.json();
+                const container = document.getElementById('agents-container');
+                
+                Object.entries(agents).forEach(([name, config]) => {
+                    const card = document.createElement('div');
+                    card.className = 'agent-card';
+                    card.innerHTML = `
+                        <h3>${config.role}</h3>
+                        <div>
+                            <label>Goal:</label>
+                            <textarea id="${name}_goal" rows="2">${config.goal}</textarea>
+                        </div>
+                        <div>
+                            <label>Backstory:</label>
+                            <textarea id="${name}_backstory" rows="3">${config.backstory}</textarea>
+                        </div>
+                        <button onclick="updateAgent('${name}')">Update</button>
+                        <span id="${name}_message"></span>
+                    `;
+                    container.appendChild(card);
+                });
+            } catch (error) {
+                console.error('Failed to load agents:', error);
+            }
+        }
+
+        async function updateAgent(agentName) {
+            const goalElement = document.getElementById(`${agentName}_goal`);
+            const backstoryElement = document.getElementById(`${agentName}_backstory`);
+            const messageElement = document.getElementById(`${agentName}_message`);
+            
+            try {
+                const response = await fetch('/update_agent', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        agent_name: agentName,
+                        goal: goalElement.value,
+                        backstory: backstoryElement.value
+                    })
+                });
+                
+                const result = await response.json();
+                if (response.ok) {
+                    messageElement.className = 'success-message';
+                    messageElement.textContent = ' ✓ Saved';
+                    setTimeout(() => messageElement.textContent = '', 2000);
+                } else {
+                    messageElement.className = 'error-message';
+                    messageElement.textContent = ` ✗ ${result.error}`;
+                }
+            } catch (error) {
+                messageElement.className = 'error-message';
+                messageElement.textContent = ' ✗ Update failed';
+            }
+        }
+
+        loadAgents();
+    </script>
+</body>
+</html>
